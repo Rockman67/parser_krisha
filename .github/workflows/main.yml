@@ -57,7 +57,7 @@ jobs:
       run: |
         $iscc = Get-ChildItem -Path "C:\Program Files*" -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($iscc) {
-            echo "::set-output name=iscc_path::$($iscc.FullName)"
+            echo "ISCC_PATH=$($iscc.FullName)" >> $GITHUB_ENV
             echo "Found ISCC.exe at $($iscc.FullName)"
         } else {
             echo "ISCC.exe not found."
@@ -97,7 +97,7 @@ jobs:
 
     - name: Compile Inno Setup Script
       run: |
-        & "${{ steps.find_iscc.outputs.iscc_path }}" install_script.iss
+        & "$env:ISCC_PATH" install_script.iss
 
     - name: Upload Installers
       uses: actions/upload-artifact@v3
