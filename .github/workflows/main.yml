@@ -27,7 +27,7 @@ jobs:
         } else {
             echo "No requirements.txt found"
         }
-        pip install pyinstaller
+        pip install pyinstaller Pillow
 
     - name: Build executable with PyInstaller
       run: |
