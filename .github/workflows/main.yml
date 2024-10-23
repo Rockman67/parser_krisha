@@ -52,34 +52,48 @@ jobs:
             exit 1
         }
 
+    - name: Find ISCC.exe
+      id: find_iscc
+      run: |
+        $iscc = Get-ChildItem -Path "C:\Program Files*" -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($iscc) {
+            echo "::set-output name=iscc_path::$($iscc.FullName)"
+            echo "Found ISCC.exe at $($iscc.FullName)"
+        } else {
+            echo "ISCC.exe not found."
+            exit 1
+        }
+
     - name: Create Inno Setup Script
       run: |
-        Add-Content -Path install_script.iss -Value "[Setup]"
-        Add-Content -Path install_script.iss -Value "AppName=Парсер Кришa"
-        Add-Content -Path install_script.iss -Value "AppVersion=1.0"
-        Add-Content -Path install_script.iss -Value "DefaultDirName={pf}\ПарсерКришa"
-        Add-Content -Path install_script.iss -Value "DefaultGroupName=Парсер Кришa"
-        Add-Content -Path install_script.iss -Value "OutputBaseFilename=ParserKrishaInstaller"
-        Add-Content -Path install_script.iss -Value "Compression=lzma"
-        Add-Content -Path install_script.iss -Value "SolidCompression=yes"
-        Add-Content -Path install_script.iss -Value ""
-        Add-Content -Path install_script.iss -Value "[Files]"
-        Add-Content -Path install_script.iss -Value 'Source: "dist\parser_gui.exe"; DestDir: "{app}"; Flags: ignoreversion'
-        Add-Content -Path install_script.iss -Value 'Source: "parser.ico"; DestDir: "{app}"; Flags: ignoreversion'
-        Add-Content -Path install_script.iss -Value ""
-        Add-Content -Path install_script.iss -Value "[Icons]"
-        Add-Content -Path install_script.iss -Value 'Name: "{group}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"'
-        Add-Content -Path install_script.iss -Value 'Name: "{commondesktop}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"; Tasks: desktopicon'
-        Add-Content -Path install_script.iss -Value ""
-        Add-Content -Path install_script.iss -Value "[Tasks]"
-        Add-Content -Path install_script.iss -Value 'Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"; Flags: checked'
-        Add-Content -Path install_script.iss -Value ""
-        Add-Content -Path install_script.iss -Value "[Run]"
-        Add-Content -Path install_script.iss -Value 'Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait postinstall skipifsilent'
+        @"
+        [Setup]
+        AppName=Парсер Кришa
+        AppVersion=1.0
+        DefaultDirName={pf}\ПарсерКришa
+        DefaultGroupName=Парсер Кришa
+        OutputBaseFilename=ParserKrishaInstaller
+        Compression=lzma
+        SolidCompression=yes
+
+        [Files]
+        Source: "dist\parser_gui.exe"; DestDir: "{app}"; Flags: ignoreversion
+        Source: "parser.ico"; DestDir: "{app}"; Flags: ignoreversion
+
+        [Icons]
+        Name: "{group}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"
+        Name: "{commondesktop}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"; Tasks: desktopicon
+
+        [Tasks]
+        Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"; Flags: checked
+
+        [Run]
+        Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait postinstall skipifsilent
+        "@ | Out-File -FilePath install_script.iss -Encoding utf8
 
     - name: Compile Inno Setup Script
       run: |
-        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" install_script.iss
+        & "${{ steps.find_iscc.outputs.iscc_path }}" install_script.iss
 
     - name: Upload Installers
       uses: actions/upload-artifact@v3
