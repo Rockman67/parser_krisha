@@ -85,7 +85,7 @@ jobs:
         Name: "{commondesktop}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"; Tasks: desktopicon
 
         [Tasks]
-        Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"; Flags: checked
+        Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: checked
 
         [Run]
         Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait, postinstall, skipifsilent
