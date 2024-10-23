@@ -89,7 +89,11 @@ jobs:
 
         [Run]
         Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait postinstall skipifsilent
-        "@ | Out-File -FilePath install_script.iss -Encoding utf8
+        "@ | Out-File -FilePath install_script.iss -Encoding utf8NoBOM
+
+    - name: Show Inno Setup Script Content
+      run: |
+        Get-Content install_script.iss
 
     - name: Compile Inno Setup Script
       run: |
