@@ -1,4 +1,4 @@
-name: Build ParserKrisha
+name: Build and Package ParserKrisha
 
 on:
   push:
@@ -22,15 +22,56 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if exist requirements.txt (pip install -r requirements.txt) else (echo "No requirements.txt found")
         pip install pyinstaller
 
-    - name: Build executable
+    - name: Build executable with PyInstaller
       run: |
         pyinstaller --onefile --windowed --icon=parser.ico parser_gui.py
 
-    - name: Upload executable
-      uses: actions/upload-artifact@v2
+    - name: Install Chocolatey
+      run: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+    - name: Install Inno Setup
+      run: |
+        choco install innosetup --version=6.2.0 -y
+
+    - name: Create Inno Setup Script
+      run: |
+        echo [Setup] > install_script.iss
+        echo AppName=Парсер Кришa >> install_script.iss
+        echo AppVersion=1.0 >> install_script.iss
+        echo DefaultDirName={pf}\ПарсерКришa >> install_script.iss
+        echo DefaultGroupName=Парсер Кришa >> install_script.iss
+        echo OutputBaseFilename=ParserKrishaInstaller >> install_script.iss
+        echo Compression=lzma >> install_script.iss
+        echo SolidCompression=yes >> install_script.iss
+        echo >> install_script.iss
+        echo [Files] >> install_script.iss
+        echo Source: "dist\parser_gui.exe"; DestDir: "{app}"; Flags: ignoreversion >> install_script.iss
+        echo Source: "parser.ico"; DestDir: "{app}"; Flags: ignoreversion >> install_script.iss
+        echo >> install_script.iss
+        echo [Icons] >> install_script.iss
+        echo Name: "{group}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico" >> install_script.iss
+        echo Name: "{commondesktop}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"; Tasks: desktopicon >> install_script.iss
+        echo >> install_script.iss
+        echo [Tasks] >> install_script.iss
+        echo Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"; Flags: checked >> install_script.iss
+        echo >> install_script.iss
+        echo [Run] >> install_script.iss
+        echo Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait postinstall skipifsilent >> install_script.iss
+
+    - name: Compile Inno Setup Script
+      run: |
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" install_script.iss
+
+    - name: Upload Installers
+      uses: actions/upload-artifact@v3
       with:
-        name: ParserKrishaExecutable
-        path: dist/parser_gui.exe
+        name: Installers
+        path: |
+          dist/parser_gui.exe
+          ParserKrishaInstaller.exe
