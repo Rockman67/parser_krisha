@@ -88,7 +88,7 @@ jobs:
         Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"; Flags: checked
 
         [Run]
-        Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait postinstall skipifsilent
+        Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait, postinstall, skipifsilent
         "@ | Out-File -FilePath install_script.iss -Encoding utf8NoBOM
 
     - name: Show Inno Setup Script Content
