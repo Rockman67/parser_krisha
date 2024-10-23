@@ -41,7 +41,7 @@ jobs:
 
     - name: Install Inno Setup
       run: |
-        choco install innosetup --version=6.2.0 -y
+        choco install innosetup -y
 
     - name: Verify Inno Setup Installation
       run: |
