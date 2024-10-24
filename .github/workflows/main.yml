@@ -57,7 +57,7 @@ jobs:
       run: |
         $iscc = Get-ChildItem -Path "C:\Program Files*" -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($iscc) {
-            echo "ISCC_PATH=$($iscc.FullName)" >> $GITHUB_ENV
+            Add-Content -Path $env:GITHUB_ENV -Value "ISCC_PATH=$($iscc.FullName)"
             echo "Found ISCC.exe at $($iscc.FullName)"
         } else {
             echo "ISCC.exe not found."
