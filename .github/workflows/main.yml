@@ -99,9 +99,22 @@ jobs:
       run: |
         echo "ISCC_PATH=$env:ISCC_PATH"
 
+    - name: Check ISCC.exe exists
+      run: |
+        if (!(Test-Path "$env:ISCC_PATH")) {
+            Write-Error "ISCC.exe not found at $env:ISCC_PATH"
+            exit 1
+        } else {
+            Write-Host "ISCC.exe exists at $env:ISCC_PATH"
+        }
+
+    - name: List Inno Setup Directory
+      run: |
+        Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\"
+
     - name: Compile Inno Setup Script
       run: |
-        & "$env:ISCC_PATH" "install_script.iss"
+        Start-Process -FilePath "$env:ISCC_PATH" -ArgumentList "install_script.iss" -Wait -NoNewWindow
 
     - name: Upload Installers
       uses: actions/upload-artifact@v3
