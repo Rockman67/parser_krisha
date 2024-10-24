@@ -64,20 +64,6 @@ conn = init_db()
 # Создание очереди для сообщений между потоками
 update_queue = queue.Queue()
 
-# Автоматическая установка необходимых библиотек
-required = {'requests', 'beautifulsoup4', 'pyperclip'}
-installed = {pkg.metadata["Name"].lower() for pkg in metadata.distributions()}
-missing = required - installed
-
-if missing:
-    python = sys.executable
-    try:
-        subprocess.check_call([python, '-m', 'pip', 'install', *missing])
-        logging.info(f"Установлены отсутствующие библиотеки: {', '.join(missing)}")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Не удалось установить библиотеки: {e}")
-        sys.exit(1)
-
 # Валидация URL
 def is_valid_url(url):
     regex = re.compile(
