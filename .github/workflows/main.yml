@@ -22,11 +22,9 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if (Test-Path requirements.txt) {
-            pip install -r requirements.txt
-        } else {
-            echo "No requirements.txt found"
-        }
+        # Установка необходимых зависимостей
+        pip install requests beautifulsoup4 pyperclip
+        # Установка PyInstaller и Pillow
         pip install pyinstaller Pillow
 
     - name: Build executable with PyInstaller
