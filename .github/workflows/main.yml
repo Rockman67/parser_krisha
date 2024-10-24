@@ -95,9 +95,13 @@ jobs:
       run: |
         Get-Content install_script.iss
 
+    - name: Show ISCC_PATH
+      run: |
+        echo "ISCC_PATH=$env:ISCC_PATH"
+
     - name: Compile Inno Setup Script
       run: |
-        & "$env:ISCC_PATH" install_script.iss
+        & "$env:ISCC_PATH" "install_script.iss"
 
     - name: Upload Installers
       uses: actions/upload-artifact@v3
