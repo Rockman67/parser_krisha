@@ -16,6 +16,7 @@ import re
 import shutil
 import pyperclip
 from urllib.parse import urljoin
+import webbrowser  # Для открытия ссылок в браузере
 
 # Определение пути к директории с исполняемым файлом
 if getattr(sys, 'frozen', False):
@@ -47,12 +48,20 @@ def init_db():
     # Установите check_same_thread=False, чтобы разрешить доступ из нескольких потоков
     conn = sqlite3.connect(db_path, check_same_thread=False)
     cursor = conn.cursor()
+    # Проверка существования столбца 'description'
+    cursor.execute("PRAGMA table_info(history);")
+    columns = [info[1] for info in cursor.fetchall()]
+    if 'description' not in columns:
+        cursor.execute("ALTER TABLE history ADD COLUMN description TEXT;")
+        conn.commit()
+        logging.info("Добавлен столбец 'description' в таблицу 'history'.")
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             time TEXT NOT NULL,
             client_number TEXT NOT NULL,
-            url TEXT NOT NULL
+            url TEXT NOT NULL,
+            description TEXT
         )
     ''')
     conn.commit()
@@ -92,15 +101,15 @@ def clear_folder(folder_path):
         logging.warning(f'Папка {folder_path} не найдена.')
 
 # Функция для сохранения истории в базу данных
-def save_history(client_number, url, time):
+def save_history(client_number, url, time, description):
     try:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO history (time, client_number, url)
-            VALUES (?, ?, ?)
-        ''', (time, client_number, url))
+            INSERT INTO history (time, client_number, url, description)
+            VALUES (?, ?, ?, ?)
+        ''', (time, client_number, url, description))
         conn.commit()
-        logging.info(f'История сохранена: Клиент {client_number}, Ссылка {url}')
+        logging.info(f'История сохранена: Клиент {client_number}, Ссылка {url}, Описание {description}')
     except Exception as e:
         logging.error(f'Не удалось сохранить историю: {e}')
 
@@ -238,26 +247,54 @@ reports_label.pack(pady=5, padx=10, anchor='w')
 reports_text = scrolledtext.ScrolledText(reports_tab, width=105, height=25, state='disabled', font=('Arial', 10))
 reports_text.pack(pady=5, padx=10)
 
+# Функция для открытия ссылки при клике
+def open_url(event):
+    index = reports_text.index(f"@{event.x},{event.y}")
+    url = reports_text.get(index, f"@{event.x},{event.y} +1c")
+    if url.startswith("http://") or url.startswith("https://"):
+        webbrowser.open(url)
+
+# Добавление тега для ссылок
+reports_text.tag_configure("url", foreground="blue", underline=1)
+reports_text.tag_bind("url", "<Button-1>", open_url)
+
 # Функция для обновления отчетов из базы данных
 def update_reports():
     try:
         cursor = conn.cursor()
-        cursor.execute('SELECT time, client_number, url FROM history ORDER BY id DESC')
+        cursor.execute('SELECT time, client_number, url, description FROM history ORDER BY id DESC')
         rows = cursor.fetchall()
+        
+        # Группировка по дате
         reports = {}
         for row in rows:
-            time_str, client_number, url = row
-            if client_number not in reports:
-                reports[client_number] = []
-            reports[client_number].append((time_str, url))
+            time_str, client_number, url, description = row
+            date_str = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
+            time_only = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%H:%M')
+            if date_str not in reports:
+                reports[date_str] = []
+            reports[date_str].append({'client_number': client_number, 'time': time_only, 'url': url, 'description': description})
         
         # Очистка и обновление поля отчетов
         reports_text.config(state='normal')
         reports_text.delete(1.0, tk.END)
-        for client, entries in reports.items():
-            reports_text.insert(tk.END, f"{client}\n")
+        for date, entries in reports.items():
+            reports_text.insert(tk.END, f"{date}\n\n")
             for entry in entries:
-                reports_text.insert(tk.END, f"{entry[0]} {entry[1]}\n")
+                client = entry['client_number']
+                time = entry['time']
+                url = entry['url']
+                description = entry['description'] if entry['description'] else "Описание отсутствует"
+                # Вставка номера клиента
+                reports_text.insert(tk.END, f"{client}\n")
+                # Вставка времени, ссылки и описания
+                start_index = reports_text.index(tk.INSERT)
+                reports_text.insert(tk.END, f"{time} ")
+                # Вставка ссылки с тегом
+                reports_text.insert(tk.END, f"{url}", "url")
+                end_index = reports_text.index(tk.INSERT)
+                # Добавление разделителя и описания
+                reports_text.insert(tk.END, f", {description}\n\n")
             reports_text.insert(tk.END, "\n")
         reports_text.config(state='disabled')
         logging.info("Отчеты обновлены.")
@@ -288,7 +325,7 @@ tk.Button(logs_tab, text="Просмотреть лог-файл", command=open_
 description_label = tk.Label(description_tab, text="Описание квартиры:", font=('Arial', 12, 'bold'))
 description_label.pack(pady=5, padx=10, anchor='w')
 
-description_text = scrolledtext.ScrolledText(description_tab, width=105, height=10, state='disabled', font=('Arial', 10))
+description_text = scrolledtext.ScrolledText(description_tab, width=105, height=10, state='normal', font=('Arial', 10))
 description_text.pack(pady=5, padx=10)
 
 # Функция для копирования описания квартиры
@@ -313,10 +350,11 @@ def parse():
     url = entry_url.get()
     client_number = entry_client.get()
     save_path = entry_folder.get()
+    description = description_text.get(1.0, tk.END).strip()  # Получение описания
 
-    if not url or not client_number or not save_path:
-        messagebox.showwarning("Предупреждение", "Пожалуйста, заполните все поля.")
-        logging.warning("Пользователь не заполнил все поля.")
+    if not url or not client_number or not save_path or not description:
+        messagebox.showwarning("Предупреждение", "Пожалуйста, заполните все поля и добавьте описание.")
+        logging.warning("Пользователь не заполнил все поля или не добавил описание.")
         return
 
     # Валидация URL
@@ -376,7 +414,7 @@ def parse():
 
         # Сохранение истории в базу данных
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        progress_queue.put({'type': 'save_history', 'client_number': client_number, 'url': url, 'time': current_time})
+        progress_queue.put({'type': 'save_history', 'client_number': client_number, 'url': url, 'time': current_time, 'description': description})
 
         # Найти первую картинку нужного размера
         img_tag = soup.find('img', src=re.compile('750x470'))
@@ -476,7 +514,8 @@ def process_queue():
                 client_number = message.get('client_number', '')
                 url = message.get('url', '')
                 time = message.get('time', '')
-                save_history(client_number, url, time)
+                description = message.get('description', '')
+                save_history(client_number, url, time, description)
             
             elif msg_type == 'complete':
                 downloaded = message.get('downloaded', 0)
@@ -498,27 +537,596 @@ def process_queue():
 def update_reports():
     try:
         cursor = conn.cursor()
-        cursor.execute('SELECT time, client_number, url FROM history ORDER BY id DESC')
+        cursor.execute('SELECT time, client_number, url, description FROM history ORDER BY id DESC')
         rows = cursor.fetchall()
+        
+        # Группировка по дате
         reports = {}
         for row in rows:
-            time_str, client_number, url = row
-            if client_number not in reports:
-                reports[client_number] = []
-            reports[client_number].append((time_str, url))
+            time_str, client_number, url, description = row
+            date_str = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
+            time_only = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%H:%M')
+            if date_str not in reports:
+                reports[date_str] = []
+            reports[date_str].append({'client_number': client_number, 'time': time_only, 'url': url, 'description': description})
         
         # Очистка и обновление поля отчетов
         reports_text.config(state='normal')
         reports_text.delete(1.0, tk.END)
-        for client, entries in reports.items():
-            reports_text.insert(tk.END, f"{client}\n")
+        for date, entries in reports.items():
+            reports_text.insert(tk.END, f"{date}\n\n")
             for entry in entries:
-                reports_text.insert(tk.END, f"{entry[0]} {entry[1]}\n")
+                client = entry['client_number']
+                time = entry['time']
+                url = entry['url']
+                description = entry['description'] if entry['description'] else "Описание отсутствует"
+                # Вставка номера клиента
+                reports_text.insert(tk.END, f"{client}\n")
+                # Вставка времени, ссылки и описания
+                start_index = reports_text.index(tk.INSERT)
+                reports_text.insert(tk.END, f"{time} ")
+                # Вставка ссылки с тегом
+                reports_text.insert(tk.END, f"{url}", "url")
+                end_index = reports_text.index(tk.INSERT)
+                # Добавление разделителя и описания
+                reports_text.insert(tk.END, f", {description}\n\n")
             reports_text.insert(tk.END, "\n")
         reports_text.config(state='disabled')
         logging.info("Отчеты обновлены.")
     except Exception as e:
         logging.error(f"Не удалось обновить отчеты: {e}")
+
+tk.Button(reports_tab, text="Обновить отчёты", command=update_reports, font=('Arial', 12)).pack(pady=5, padx=10, anchor='w')
+
+# ----- Вкладка "Логи" -----
+log_label = tk.Label(logs_tab, text="Логи:", font=('Arial', 12, 'bold'))
+log_label.pack(pady=5, padx=10, anchor='w')
+
+log_text = scrolledtext.ScrolledText(logs_tab, width=105, height=25, state='disabled', font=('Arial', 10))
+log_text.pack(pady=5, padx=10)
+
+# Функция для открытия логов
+def open_logs():
+    try:
+        os.startfile(os.path.join(application_path, 'parser_log.txt'))
+        logging.info("Открыт файл логов.")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось открыть логи: {e}")
+        logging.error(f"Не удалось открыть логи: {e}")
+
+tk.Button(logs_tab, text="Просмотреть лог-файл", command=open_logs, font=('Arial', 12)).pack(pady=5, padx=10, anchor='w')
+
+# ----- Вкладка "Описание" -----
+description_label = tk.Label(description_tab, text="Описание квартиры:", font=('Arial', 12, 'bold'))
+description_label.pack(pady=5, padx=10, anchor='w')
+
+description_text = scrolledtext.ScrolledText(description_tab, width=105, height=10, state='normal', font=('Arial', 10))
+description_text.pack(pady=5, padx=10)
+
+# Функция для копирования описания квартиры
+def copy_description():
+    description = description_text.get(1.0, tk.END).strip()
+    if description:
+        try:
+            pyperclip.copy(description)
+            messagebox.showinfo("Успех", "Описание скопировано в буфер обмена.")
+            logging.info("Описание скопировано в буфер обмена.")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось скопировать описание: {e}")
+            logging.error(f"Не удалось скопировать описание: {e}")
+    else:
+        messagebox.showwarning("Предупреждение", "Описание квартиры пусто.")
+        logging.warning("Попытка скопировать пустое описание.")
+
+tk.Button(description_tab, text="Копировать описание", command=copy_description, font=('Arial', 12)).pack(pady=5, padx=10, anchor='w')
+
+# Основная функция парсинга
+def parse():
+    url = entry_url.get()
+    client_number = entry_client.get()
+    save_path = entry_folder.get()
+    description = description_text.get(1.0, tk.END).strip()  # Получение описания
+
+    if not url or not client_number or not save_path or not description:
+        messagebox.showwarning("Предупреждение", "Пожалуйста, заполните все поля и добавьте описание.")
+        logging.warning("Пользователь не заполнил все поля или не добавил описание.")
+        return
+
+    # Валидация URL
+    if not is_valid_url(url):
+        messagebox.showerror("Ошибка", "Введённый URL некорректен.")
+        logging.error(f"Некорректный URL: {url}")
+        return
+
+    # Очистка папки
+    clear_folder(save_path)
+
+    # Настройка прогресс-бара
+    max_images = 200  # Максимальное количество изображений для попыток
+    progress_queue = update_queue
+    progress_queue.put({'type': 'init_progress', 'max_images': max_images})
+
+    # Загрузка страницы
+    try:
+        response = requests.get(url, timeout=10)
+        logging.info(f'Страница загружена: {url} Статус: {response.status_code}')
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось загрузить страницу: {e}")
+        logging.error(f"Не удалось загрузить страницу {url}: {e}")
+        progress_queue.put({'type': 'error', 'message': f"Не удалось загрузить страницу: {e}"})
+        return
+
+    if response.status_code == 200:
+        # Парсинг HTML-кода страницы
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Парсинг заголовка объявления
+        title_tag = soup.find('h1', class_='offer__title')
+        title = title_tag.get_text(strip=True) if title_tag else ''
+
+        # Парсинг метража
+        size_tag = soup.find('div', class_='offer__advert-title')
+        size = size_tag.get_text(strip=True).split('Оставить')[0].strip() if size_tag else ''
+
+        # Парсинг адреса
+        address_tag = soup.find('div', class_='offer__location')
+        address = address_tag.get_text(strip=True) if address_tag else ''
+
+        # Парсинг цены
+        price_tag = soup.find('div', class_='offer__price')
+        price = price_tag.get_text(strip=True) if price_tag else ''
+
+        # Парсинг точного адреса
+        full_address_tag = soup.find('div', class_='offer__location').find_next('div')
+        full_address = full_address_tag.get_text(strip=True) if full_address_tag else ''
+        full_address = full_address.replace('Адрес', '').strip()  # Удаление лишнего слова "Адрес"
+
+        # Форматирование вывода
+        formatted_output = f"{size}, {full_address}, {price}"
+
+        # Обновление поля описания квартиры
+        progress_queue.put({'type': 'update_description', 'description': formatted_output})
+
+        # Сохранение истории в базу данных
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        progress_queue.put({'type': 'save_history', 'client_number': client_number, 'url': url, 'time': current_time, 'description': description})
+
+        # Найти первую картинку нужного размера
+        img_tag = soup.find('img', src=re.compile('750x470'))
+        if img_tag:
+            img_url = img_tag['src']
+            # Извлекаем base_url и суффикс из найденной ссылки
+            match = re.match(r'(.*\/)(\d+)(-750x470\.\w+)', img_url)
+            if match:
+                base_url = match.group(1)
+                image_suffix = match.group(3)
+
+                # Логирование готовности папки
+                logging.info(f'Папка для изображений готова: {save_path}')
+
+                downloaded = 0
+                attempted = 0
+
+                for count in range(1, max_images + 1):
+                    image_url = f"{base_url}{count}{image_suffix}"
+                    attempted += 1
+                    try:
+                        img_response = requests.get(image_url, timeout=10)
+                        if img_response.status_code == 200:
+                            # Определение расширения файла из URL
+                            ext = os.path.splitext(image_url)[1]  # включает точку
+                            if not ext:
+                                ext = '.jpg'  # стандартное расширение, если отсутствует
+                            # Генерация уникального имени файла
+                            file_path = os.path.join(save_path, f'image_{count}{ext}')
+                            with open(file_path, 'wb') as f:
+                                f.write(img_response.content)
+                            log_message = f'Скачано изображение: {image_url}\n'
+                            progress_queue.put({'type': 'log', 'message': log_message})
+                            logging.info(f'Скачано изображение: {image_url}')
+                            downloaded += 1
+                        else:
+                            log_message = f"Не удалось скачать изображение: {image_url} (Статус: {img_response.status_code})\n"
+                            progress_queue.put({'type': 'log', 'message': log_message})
+                            logging.warning(f"Не удалось скачать изображение: {image_url} Статус: {img_response.status_code}")
+                    except Exception as e:
+                        log_message = f"Ошибка при скачивании {image_url}: {e}\n"
+                        progress_queue.put({'type': 'log', 'message': log_message})
+                        logging.error(f"Ошибка при скачивании {image_url}: {e}")
+
+                    # Обновление прогресса
+                    progress_queue.put({'type': 'update_progress', 'attempted': attempted, 'downloaded': downloaded, 'max_images': max_images})
+
+                # После завершения скачивания
+                completion_message = f'Попытки загрузки завершены. Скачано {downloaded} изображений.\n'
+                progress_queue.put({'type': 'log', 'message': completion_message})
+                logging.info(f'Попытки загрузки завершены. Скачано {downloaded} изображений.')
+                progress_queue.put({'type': 'complete', 'downloaded': downloaded, 'max_images': max_images})
+            else:
+                log_message = "Не удалось извлечь base_url из ссылки на изображение.\n"
+                progress_queue.put({'type': 'log', 'message': log_message})
+                logging.warning("Не удалось извлечь base_url из ссылки на изображение.")
+        else:
+            log_message = "Не удалось найти изображение нужного размера на странице.\n"
+            progress_queue.put({'type': 'log', 'message': log_message})
+            logging.warning("Не удалось найти изображение нужного размера на странице.")
+
+# Функция для обработки сообщений из очереди
+def process_queue():
+    try:
+        while True:
+            message = update_queue.get_nowait()
+            msg_type = message.get('type')
+            
+            if msg_type == 'init_progress':
+                max_images = message.get('max_images', 200)
+                progress_bar.config(maximum=max_images)
+                progress_bar['value'] = 0
+                progress_label.config(text="Поиск фото...")
+            
+            elif msg_type == 'update_progress':
+                attempted = message.get('attempted', 0)
+                downloaded = message.get('downloaded', 0)
+                max_images = message.get('max_images', 200)
+                progress_bar['value'] = attempted
+                progress_label.config(text=f"Скачано {downloaded} из {max_images} изображений.")
+            
+            elif msg_type == 'log':
+                log_message = message.get('message', '')
+                log_text.config(state='normal')
+                log_text.insert(tk.END, log_message)
+                log_text.see(tk.END)
+                log_text.config(state='disabled')
+            
+            elif msg_type == 'update_description':
+                description = message.get('description', '')
+                description_text.config(state='normal')
+                description_text.delete(1.0, tk.END)
+                description_text.insert(tk.END, description)
+                description_text.config(state='disabled')
+            
+            elif msg_type == 'save_history':
+                client_number = message.get('client_number', '')
+                url = message.get('url', '')
+                time = message.get('time', '')
+                description = message.get('description', '')
+                save_history(client_number, url, time, description)
+            
+            elif msg_type == 'complete':
+                downloaded = message.get('downloaded', 0)
+                max_images = message.get('max_images', 200)
+                progress_label.config(text=f"Загрузка завершена. Скачано {downloaded} изображений.")
+                progress_bar['value'] = max_images
+                update_reports()
+            
+            elif msg_type == 'error':
+                error_message = message.get('message', '')
+                messagebox.showerror("Ошибка", error_message)
+                
+    except queue.Empty:
+        pass
+    finally:
+        root.after(100, process_queue)  # Проверять очередь каждые 100 мс
+
+# Функция для обновления отчетов из базы данных
+def update_reports():
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT time, client_number, url, description FROM history ORDER BY id DESC')
+        rows = cursor.fetchall()
+        
+        # Группировка по дате
+        reports = {}
+        for row in rows:
+            time_str, client_number, url, description = row
+            date_str = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
+            time_only = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%H:%M')
+            if date_str not in reports:
+                reports[date_str] = []
+            reports[date_str].append({'client_number': client_number, 'time': time_only, 'url': url, 'description': description})
+        
+        # Очистка и обновление поля отчетов
+        reports_text.config(state='normal')
+        reports_text.delete(1.0, tk.END)
+        for date, entries in reports.items():
+            reports_text.insert(tk.END, f"{date}\n\n")
+            for entry in entries:
+                client = entry['client_number']
+                time = entry['time']
+                url = entry['url']
+                description = entry['description'] if entry['description'] else "Описание отсутствует"
+                # Вставка номера клиента
+                reports_text.insert(tk.END, f"{client}\n")
+                # Вставка времени, ссылки и описания
+                start_index = reports_text.index(tk.INSERT)
+                reports_text.insert(tk.END, f"{time} ")
+                # Вставка ссылки с тегом
+                reports_text.insert(tk.END, f"{url}", "url")
+                end_index = reports_text.index(tk.INSERT)
+                # Добавление разделителя и описания
+                reports_text.insert(tk.END, f", {description}\n\n")
+            reports_text.insert(tk.END, "\n")
+        reports_text.config(state='disabled')
+        logging.info("Отчеты обновлены.")
+    except Exception as e:
+        logging.error(f"Не удалось обновить отчеты: {e}")
+
+tk.Button(reports_tab, text="Обновить отчёты", command=update_reports, font=('Arial', 12)).pack(pady=5, padx=10, anchor='w')
+
+# ----- Вкладка "Логи" -----
+log_label = tk.Label(logs_tab, text="Логи:", font=('Arial', 12, 'bold'))
+log_label.pack(pady=5, padx=10, anchor='w')
+
+log_text = scrolledtext.ScrolledText(logs_tab, width=105, height=25, state='disabled', font=('Arial', 10))
+log_text.pack(pady=5, padx=10)
+
+# Функция для открытия логов
+def open_logs():
+    try:
+        os.startfile(os.path.join(application_path, 'parser_log.txt'))
+        logging.info("Открыт файл логов.")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось открыть логи: {e}")
+        logging.error(f"Не удалось открыть логи: {e}")
+
+tk.Button(logs_tab, text="Просмотреть лог-файл", command=open_logs, font=('Arial', 12)).pack(pady=5, padx=10, anchor='w')
+
+# ----- Вкладка "Описание" -----
+description_label = tk.Label(description_tab, text="Описание квартиры:", font=('Arial', 12, 'bold'))
+description_label.pack(pady=5, padx=10, anchor='w')
+
+description_text = scrolledtext.ScrolledText(description_tab, width=105, height=10, state='normal', font=('Arial', 10))
+description_text.pack(pady=5, padx=10)
+
+# Функция для копирования описания квартиры
+def copy_description():
+    description = description_text.get(1.0, tk.END).strip()
+    if description:
+        try:
+            pyperclip.copy(description)
+            messagebox.showinfo("Успех", "Описание скопировано в буфер обмена.")
+            logging.info("Описание скопировано в буфер обмена.")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось скопировать описание: {e}")
+            logging.error(f"Не удалось скопировать описание: {e}")
+    else:
+        messagebox.showwarning("Предупреждение", "Описание квартиры пусто.")
+        logging.warning("Попытка скопировать пустое описание.")
+
+tk.Button(description_tab, text="Копировать описание", command=copy_description, font=('Arial', 12)).pack(pady=5, padx=10, anchor='w')
+
+# Основная функция парсинга
+def parse():
+    url = entry_url.get()
+    client_number = entry_client.get()
+    save_path = entry_folder.get()
+    description = description_text.get(1.0, tk.END).strip()  # Получение описания
+
+    if not url or not client_number or not save_path or not description:
+        messagebox.showwarning("Предупреждение", "Пожалуйста, заполните все поля и добавьте описание.")
+        logging.warning("Пользователь не заполнил все поля или не добавил описание.")
+        return
+
+    # Валидация URL
+    if not is_valid_url(url):
+        messagebox.showerror("Ошибка", "Введённый URL некорректен.")
+        logging.error(f"Некорректный URL: {url}")
+        return
+
+    # Очистка папки
+    clear_folder(save_path)
+
+    # Настройка прогресс-бара
+    max_images = 200  # Максимальное количество изображений для попыток
+    progress_queue = update_queue
+    progress_queue.put({'type': 'init_progress', 'max_images': max_images})
+
+    # Загрузка страницы
+    try:
+        response = requests.get(url, timeout=10)
+        logging.info(f'Страница загружена: {url} Статус: {response.status_code}')
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось загрузить страницу: {e}")
+        logging.error(f"Не удалось загрузить страницу {url}: {e}")
+        progress_queue.put({'type': 'error', 'message': f"Не удалось загрузить страницу: {e}"})
+        return
+
+    if response.status_code == 200:
+        # Парсинг HTML-кода страницы
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Парсинг заголовка объявления
+        title_tag = soup.find('h1', class_='offer__title')
+        title = title_tag.get_text(strip=True) if title_tag else ''
+
+        # Парсинг метража
+        size_tag = soup.find('div', class_='offer__advert-title')
+        size = size_tag.get_text(strip=True).split('Оставить')[0].strip() if size_tag else ''
+
+        # Парсинг адреса
+        address_tag = soup.find('div', class_='offer__location')
+        address = address_tag.get_text(strip=True) if address_tag else ''
+
+        # Парсинг цены
+        price_tag = soup.find('div', class_='offer__price')
+        price = price_tag.get_text(strip=True) if price_tag else ''
+
+        # Парсинг точного адреса
+        full_address_tag = soup.find('div', class_='offer__location').find_next('div')
+        full_address = full_address_tag.get_text(strip=True) if full_address_tag else ''
+        full_address = full_address.replace('Адрес', '').strip()  # Удаление лишнего слова "Адрес"
+
+        # Форматирование вывода
+        formatted_output = f"{size}, {full_address}, {price}"
+
+        # Обновление поля описания квартиры
+        progress_queue.put({'type': 'update_description', 'description': formatted_output})
+
+        # Сохранение истории в базу данных
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        progress_queue.put({'type': 'save_history', 'client_number': client_number, 'url': url, 'time': current_time, 'description': description})
+
+        # Найти первую картинку нужного размера
+        img_tag = soup.find('img', src=re.compile('750x470'))
+        if img_tag:
+            img_url = img_tag['src']
+            # Извлекаем base_url и суффикс из найденной ссылки
+            match = re.match(r'(.*\/)(\d+)(-750x470\.\w+)', img_url)
+            if match:
+                base_url = match.group(1)
+                image_suffix = match.group(3)
+
+                # Логирование готовности папки
+                logging.info(f'Папка для изображений готова: {save_path}')
+
+                downloaded = 0
+                attempted = 0
+
+                for count in range(1, max_images + 1):
+                    image_url = f"{base_url}{count}{image_suffix}"
+                    attempted += 1
+                    try:
+                        img_response = requests.get(image_url, timeout=10)
+                        if img_response.status_code == 200:
+                            # Определение расширения файла из URL
+                            ext = os.path.splitext(image_url)[1]  # включает точку
+                            if not ext:
+                                ext = '.jpg'  # стандартное расширение, если отсутствует
+                            # Генерация уникального имени файла
+                            file_path = os.path.join(save_path, f'image_{count}{ext}')
+                            with open(file_path, 'wb') as f:
+                                f.write(img_response.content)
+                            log_message = f'Скачано изображение: {image_url}\n'
+                            progress_queue.put({'type': 'log', 'message': log_message})
+                            logging.info(f'Скачано изображение: {image_url}')
+                            downloaded += 1
+                        else:
+                            log_message = f"Не удалось скачать изображение: {image_url} (Статус: {img_response.status_code})\n"
+                            progress_queue.put({'type': 'log', 'message': log_message})
+                            logging.warning(f"Не удалось скачать изображение: {image_url} Статус: {img_response.status_code}")
+                    except Exception as e:
+                        log_message = f"Ошибка при скачивании {image_url}: {e}\n"
+                        progress_queue.put({'type': 'log', 'message': log_message})
+                        logging.error(f"Ошибка при скачивании {image_url}: {e}")
+
+                    # Обновление прогресса
+                    progress_queue.put({'type': 'update_progress', 'attempted': attempted, 'downloaded': downloaded, 'max_images': max_images})
+
+                # После завершения скачивания
+                completion_message = f'Попытки загрузки завершены. Скачано {downloaded} изображений.\n'
+                progress_queue.put({'type': 'log', 'message': completion_message})
+                logging.info(f'Попытки загрузки завершены. Скачано {downloaded} изображений.')
+                progress_queue.put({'type': 'complete', 'downloaded': downloaded, 'max_images': max_images})
+            else:
+                log_message = "Не удалось извлечь base_url из ссылки на изображение.\n"
+                progress_queue.put({'type': 'log', 'message': log_message})
+                logging.warning("Не удалось извлечь base_url из ссылки на изображение.")
+        else:
+            log_message = "Не удалось найти изображение нужного размера на странице.\n"
+            progress_queue.put({'type': 'log', 'message': log_message})
+            logging.warning("Не удалось найти изображение нужного размера на странице.")
+
+# Функция для обработки сообщений из очереди
+def process_queue():
+    try:
+        while True:
+            message = update_queue.get_nowait()
+            msg_type = message.get('type')
+            
+            if msg_type == 'init_progress':
+                max_images = message.get('max_images', 200)
+                progress_bar.config(maximum=max_images)
+                progress_bar['value'] = 0
+                progress_label.config(text="Поиск фото...")
+            
+            elif msg_type == 'update_progress':
+                attempted = message.get('attempted', 0)
+                downloaded = message.get('downloaded', 0)
+                max_images = message.get('max_images', 200)
+                progress_bar['value'] = attempted
+                progress_label.config(text=f"Скачано {downloaded} из {max_images} изображений.")
+            
+            elif msg_type == 'log':
+                log_message = message.get('message', '')
+                log_text.config(state='normal')
+                log_text.insert(tk.END, log_message)
+                log_text.see(tk.END)
+                log_text.config(state='disabled')
+            
+            elif msg_type == 'update_description':
+                description = message.get('description', '')
+                description_text.config(state='normal')
+                description_text.delete(1.0, tk.END)
+                description_text.insert(tk.END, description)
+                description_text.config(state='disabled')
+            
+            elif msg_type == 'save_history':
+                client_number = message.get('client_number', '')
+                url = message.get('url', '')
+                time = message.get('time', '')
+                description = message.get('description', '')
+                save_history(client_number, url, time, description)
+            
+            elif msg_type == 'complete':
+                downloaded = message.get('downloaded', 0)
+                max_images = message.get('max_images', 200)
+                progress_label.config(text=f"Загрузка завершена. Скачано {downloaded} изображений.")
+                progress_bar['value'] = max_images
+                update_reports()
+            
+            elif msg_type == 'error':
+                error_message = message.get('message', '')
+                messagebox.showerror("Ошибка", error_message)
+                
+    except queue.Empty:
+        pass
+    finally:
+        root.after(100, process_queue)  # Проверять очередь каждые 100 мс
+
+# Функция для обновления отчетов из базы данных
+def update_reports():
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT time, client_number, url, description FROM history ORDER BY id DESC')
+        rows = cursor.fetchall()
+        
+        # Группировка по дате
+        reports = {}
+        for row in rows:
+            time_str, client_number, url, description = row
+            date_str = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
+            time_only = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').strftime('%H:%M')
+            if date_str not in reports:
+                reports[date_str] = []
+            reports[date_str].append({'client_number': client_number, 'time': time_only, 'url': url, 'description': description})
+        
+        # Очистка и обновление поля отчетов
+        reports_text.config(state='normal')
+        reports_text.delete(1.0, tk.END)
+        for date, entries in reports.items():
+            reports_text.insert(tk.END, f"{date}\n\n")
+            for entry in entries:
+                client = entry['client_number']
+                time = entry['time']
+                url = entry['url']
+                description = entry['description'] if entry['description'] else "Описание отсутствует"
+                # Вставка номера клиента
+                reports_text.insert(tk.END, f"{client}\n")
+                # Вставка времени, ссылки и описания
+                start_index = reports_text.index(tk.INSERT)
+                reports_text.insert(tk.END, f"{time} ")
+                # Вставка ссылки с тегом
+                reports_text.insert(tk.END, f"{url}", "url")
+                end_index = reports_text.index(tk.INSERT)
+                # Добавление разделителя и описания
+                reports_text.insert(tk.END, f", {description}\n\n")
+            reports_text.insert(tk.END, "\n")
+        reports_text.config(state='disabled')
+        logging.info("Отчеты обновлены.")
+    except Exception as e:
+        logging.error(f"Не удалось обновить отчеты: {e}")
+
+tk.Button(reports_tab, text="Обновить отчёты", command=update_reports, font=('Arial', 12)).pack(pady=5, padx=10, anchor='w')
 
 # Функция для закрытия соединения с базой данных при выходе
 def on_closing():
