@@ -250,9 +250,7 @@ def disable_event(event):
 
 # Привязка событий для предотвращения редактирования
 reports_text.bind("<Key>", disable_event)
-reports_text.bind("<Button-3>", disable_event)  # Правая кнопка мыши
-reports_text.bind("<Button-2>", disable_event)  # Средняя кнопка мыши
-# Не блокируем <Button-1>, чтобы разрешить выделение и клики по ссылкам
+# Не блокируем события кнопок мыши, чтобы разрешить выделение и контекстное меню
 
 # Функция для открытия ссылки при клике
 def open_url(event):
@@ -267,6 +265,26 @@ def open_url(event):
 # Настройка тега для ссылок
 reports_text.tag_configure("url", foreground="blue", underline=1)
 reports_text.tag_bind("url", "<Button-1>", open_url)
+
+# Создание контекстного меню для копирования
+context_menu = tk.Menu(reports_text, tearoff=0)
+context_menu.add_command(label="Копировать", command=lambda: reports_text.event_generate("<<Copy>>"))
+
+def show_context_menu(event):
+    context_menu.tk_popup(event.x_root, event.y_root)
+
+# Привязка правого клика к отображению контекстного меню
+reports_text.bind("<Button-3>", show_context_menu)
+
+# Функция для копирования ссылки в буфер обмена
+def copy_link_to_clipboard(link):
+    try:
+        pyperclip.copy(link)
+        messagebox.showinfo("Скопировано", f"Ссылка скопирована в буфер обмена:\n{link}")
+        logging.info(f"Ссылка скопирована в буфер обмена: {link}")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось скопировать ссылку: {e}")
+        logging.error(f"Не удалось скопировать ссылку: {e}")
 
 # Функция для обновления отчётов из базы данных
 def update_reports():
@@ -301,6 +319,12 @@ def update_reports():
                     reports_text.insert(tk.END, f"{time} ")
                     # Вставка ссылки с тегом
                     reports_text.insert(tk.END, url, "url")
+                    # Вставка текста для копирования
+                    copy_tag = f"copy_{time}_{client}"
+                    reports_text.insert(tk.END, " [Скопировать]", copy_tag)
+                    reports_text.tag_configure(copy_tag, foreground="green", underline=1)
+                    # Используем lambda с аргументом по умолчанию для захвата текущего URL
+                    reports_text.tag_bind(copy_tag, "<Button-1>", lambda e, link=url: copy_link_to_clipboard(link))
                     # Добавление разделителя и описания
                     reports_text.insert(tk.END, f", Описание квартиры: {description}\n\n")
             reports_text.insert(tk.END, "\n")
@@ -319,11 +343,10 @@ log_label.pack(pady=5, padx=10, anchor='w')
 log_text = scrolledtext.ScrolledText(logs_tab, width=105, height=25, font=('Arial', 10))
 log_text.pack(pady=5, padx=10)
 
-# Функция для предотвращения редактирования
+# Привязка событий для предотвращения редактирования
 log_text.bind("<Key>", disable_event)
-log_text.bind("<Button-3>", disable_event)  # Правая кнопка мыши
-log_text.bind("<Button-2>", disable_event)  # Средняя кнопка мыши
-# Не блокируем <Button-1>, чтобы разрешить выделение
+# Разрешаем выделение и контекстное меню
+log_text.bind("<Button-3>", show_context_menu)
 
 # Функция для открытия логов
 def open_logs():
@@ -343,11 +366,10 @@ description_label.pack(pady=5, padx=10, anchor='w')
 description_text = scrolledtext.ScrolledText(description_tab, width=105, height=10, font=('Arial', 10))
 description_text.pack(pady=5, padx=10)
 
-# Функция для предотвращения редактирования
+# Привязка событий для предотвращения редактирования
 description_text.bind("<Key>", disable_event)
-description_text.bind("<Button-3>", disable_event)  # Правая кнопка мыши
-description_text.bind("<Button-2>", disable_event)  # Средняя кнопка мыши
-# Не блокируем <Button-1>, чтобы разрешить выделение и копирование
+# Разрешаем выделение и контекстное меню
+description_text.bind("<Button-3>", show_context_menu)
 
 # Функция для копирования описания квартиры
 def copy_description():
