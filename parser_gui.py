@@ -1,5 +1,4 @@
 import sys
-import subprocess
 import logging
 import os
 import sqlite3  # Импорт sqlite3 для работы с базой данных
@@ -14,7 +13,6 @@ from bs4 import BeautifulSoup
 import re
 import shutil
 import pyperclip
-from urllib.parse import urljoin
 import webbrowser  # Для открытия ссылок в браузере
 
 # Определение пути к директории с приложением
@@ -243,30 +241,30 @@ tk.Button(main_tab, text="Начать парсинг", command=start_parse, bg=
 reports_label = tk.Label(reports_tab, text="Отчёты:", font=('Arial', 12, 'bold'))
 reports_label.pack(pady=5, padx=10, anchor='w')
 
-reports_text = scrolledtext.ScrolledText(reports_tab, width=105, height=25, state='normal', font=('Arial', 10))
+reports_text = scrolledtext.ScrolledText(reports_tab, width=105, height=25, font=('Arial', 10))
 reports_text.pack(pady=5, padx=10)
-reports_text.config(state='disabled')  # Отключаем редактирование, но разрешаем выделение
+
+# Функция для предотвращения редактирования
+def disable_event(event):
+    return "break"
+
+# Привязка событий для предотвращения редактирования
+reports_text.bind("<Key>", disable_event)
+reports_text.bind("<Button-3>", disable_event)  # Правая кнопка мыши
+reports_text.bind("<Button-2>", disable_event)  # Средняя кнопка мыши
+# Не блокируем <Button-1>, чтобы разрешить выделение и клики по ссылкам
 
 # Функция для открытия ссылки при клике
 def open_url(event):
     # Получаем позицию щелчка мыши
     index = reports_text.index(f"@{event.x},{event.y}")
-    # Получаем теги в этой позиции
-    tags = reports_text.tag_names(index)
-    if "url" in tags:
-        # Получаем начальный и конечный индексы тега "url"
-        url_start = reports_text.search("(", index, backwards=True, regexp=False)
-        if not url_start:
-            url_start = index
-        url_end = reports_text.search(")", index, forwards=True, regexp=False)
-        if not url_end:
-            url_end = index
-        url = reports_text.get(url_start, url_end)
-        url = url.strip()
-        if url.startswith("http"):
-            webbrowser.open(url)
+    # Проверяем, есть ли тег "url" в этой позиции
+    if "url" in reports_text.tag_names(index):
+        # Извлекаем полный URL
+        url = reports_text.get(f"{index} wordstart", f"{index} wordend")
+        webbrowser.open(url)
 
-# Добавление тега для ссылок
+# Настройка тега для ссылок
 reports_text.tag_configure("url", foreground="blue", underline=1)
 reports_text.tag_bind("url", "<Button-1>", open_url)
 
@@ -290,7 +288,6 @@ def update_reports():
             reports[date_str][client_number].append({'time': time_only, 'url': url, 'description': description})
 
         # Очистка и обновление поля отчётов
-        reports_text.config(state='normal')
         reports_text.delete(1.0, tk.END)
         for date, clients in reports.items():
             reports_text.insert(tk.END, f"{date}\n\n")
@@ -300,15 +297,13 @@ def update_reports():
                     time = entry['time']
                     url = entry['url']
                     description = entry['description'] if entry['description'] else "Описание отсутствует"
-                    # Вставка времени, ссылки и описания
+                    # Вставка времени
                     reports_text.insert(tk.END, f"{time} ")
                     # Вставка ссылки с тегом
-                    reports_text.insert(tk.END, f"{url}", "url")
+                    reports_text.insert(tk.END, url, "url")
                     # Добавление разделителя и описания
-                    reports_text.insert(tk.END, f", Описание квартиры: {description}\n")
-                reports_text.insert(tk.END, "\n")
+                    reports_text.insert(tk.END, f", Описание квартиры: {description}\n\n")
             reports_text.insert(tk.END, "\n")
-        reports_text.config(state='disabled')
         logging.info("Отчёты обновлены.")
     except Exception as e:
         logging.error(f"Не удалось обновить отчёты: {e}")
@@ -321,9 +316,14 @@ update_reports_button.pack(pady=5, padx=10, anchor='w')
 log_label = tk.Label(logs_tab, text="Логи:", font=('Arial', 12, 'bold'))
 log_label.pack(pady=5, padx=10, anchor='w')
 
-log_text = scrolledtext.ScrolledText(logs_tab, width=105, height=25, state='normal', font=('Arial', 10))
+log_text = scrolledtext.ScrolledText(logs_tab, width=105, height=25, font=('Arial', 10))
 log_text.pack(pady=5, padx=10)
-log_text.config(state='disabled')  # Отключаем редактирование, но разрешаем выделение
+
+# Функция для предотвращения редактирования
+log_text.bind("<Key>", disable_event)
+log_text.bind("<Button-3>", disable_event)  # Правая кнопка мыши
+log_text.bind("<Button-2>", disable_event)  # Средняя кнопка мыши
+# Не блокируем <Button-1>, чтобы разрешить выделение
 
 # Функция для открытия логов
 def open_logs():
@@ -340,8 +340,14 @@ tk.Button(logs_tab, text="Просмотреть лог-файл", command=open_
 description_label = tk.Label(description_tab, text="Описание квартиры:", font=('Arial', 12, 'bold'))
 description_label.pack(pady=5, padx=10, anchor='w')
 
-description_text = scrolledtext.ScrolledText(description_tab, width=105, height=10, state='normal', font=('Arial', 10))
+description_text = scrolledtext.ScrolledText(description_tab, width=105, height=10, font=('Arial', 10))
 description_text.pack(pady=5, padx=10)
+
+# Функция для предотвращения редактирования
+description_text.bind("<Key>", disable_event)
+description_text.bind("<Button-3>", disable_event)  # Правая кнопка мыши
+description_text.bind("<Button-2>", disable_event)  # Средняя кнопка мыши
+# Не блокируем <Button-1>, чтобы разрешить выделение и копирование
 
 # Функция для копирования описания квартиры
 def copy_description():
@@ -424,7 +430,8 @@ def parse():
         formatted_output = f"{size}, {full_address}, {price}"
 
         # Обновление поля описания квартиры
-        progress_queue.put({'type': 'update_description', 'description': formatted_output})
+        description_text.delete(1.0, tk.END)
+        description_text.insert(tk.END, formatted_output)
 
         # Сохранение истории в базу данных
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -462,33 +469,33 @@ def parse():
                             with open(file_path, 'wb') as f:
                                 f.write(img_response.content)
                             log_message = f'Скачано изображение: {image_url}\n'
-                            progress_queue.put({'type': 'log', 'message': log_message})
+                            update_queue.put({'type': 'log', 'message': log_message})
                             logging.info(f'Скачано изображение: {image_url}')
                             downloaded += 1
                         else:
                             log_message = f"Не удалось скачать изображение: {image_url} (Статус: {img_response.status_code})\n"
-                            progress_queue.put({'type': 'log', 'message': log_message})
+                            update_queue.put({'type': 'log', 'message': log_message})
                             logging.warning(f"Не удалось скачать изображение: {image_url} Статус: {img_response.status_code}")
                     except Exception as e:
                         log_message = f"Ошибка при скачивании {image_url}: {e}\n"
-                        progress_queue.put({'type': 'log', 'message': log_message})
+                        update_queue.put({'type': 'log', 'message': log_message})
                         logging.error(f"Ошибка при скачивании {image_url}: {e}")
 
                     # Обновление прогресса
-                    progress_queue.put({'type': 'update_progress', 'attempted': attempted, 'downloaded': downloaded, 'max_images': max_images})
+                    update_queue.put({'type': 'update_progress', 'attempted': attempted, 'downloaded': downloaded, 'max_images': max_images})
 
                 # После завершения скачивания
                 completion_message = f'Попытки загрузки завершены. Скачано {downloaded} изображений.\n'
-                progress_queue.put({'type': 'log', 'message': completion_message})
+                update_queue.put({'type': 'log', 'message': completion_message})
                 logging.info(f'Попытки загрузки завершены. Скачано {downloaded} изображений.')
-                progress_queue.put({'type': 'complete', 'downloaded': downloaded, 'max_images': max_images})
+                update_queue.put({'type': 'complete', 'downloaded': downloaded, 'max_images': max_images})
             else:
                 log_message = "Не удалось извлечь base_url из ссылки на изображение.\n"
-                progress_queue.put({'type': 'log', 'message': log_message})
+                update_queue.put({'type': 'log', 'message': log_message})
                 logging.warning("Не удалось извлечь base_url из ссылки на изображение.")
         else:
             log_message = "Не удалось найти изображение нужного размера на странице.\n"
-            progress_queue.put({'type': 'log', 'message': log_message})
+            update_queue.put({'type': 'log', 'message': log_message})
             logging.warning("Не удалось найти изображение нужного размера на странице.")
 
 # Функция для обработки сообщений из очереди
@@ -513,17 +520,8 @@ def process_queue():
 
             elif msg_type == 'log':
                 log_message = message.get('message', '')
-                log_text.config(state='normal')
                 log_text.insert(tk.END, log_message)
                 log_text.see(tk.END)
-                log_text.config(state='disabled')
-
-            elif msg_type == 'update_description':
-                description = message.get('description', '')
-                description_text.config(state='normal')
-                description_text.delete(1.0, tk.END)
-                description_text.insert(tk.END, description)
-                description_text.config(state='disabled')
 
             elif msg_type == 'complete':
                 downloaded = message.get('downloaded', 0)
