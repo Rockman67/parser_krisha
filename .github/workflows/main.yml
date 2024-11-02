@@ -22,9 +22,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # Установка необходимых зависимостей
         pip install requests beautifulsoup4 pyperclip
-        # Установка PyInstaller и Pillow
         pip install pyinstaller Pillow
 
     - name: Build executable with PyInstaller
@@ -41,21 +39,12 @@ jobs:
       run: |
         choco install innosetup -y
 
-    - name: Verify Inno Setup Installation
-      run: |
-        if (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") {
-            echo "Inno Setup is installed correctly."
-        } else {
-            echo "ISCC.exe not found at the specified path."
-            exit 1
-        }
-
     - name: Find ISCC.exe
       id: find_iscc
       run: |
         $iscc = Get-ChildItem -Path "C:\Program Files*" -Filter "ISCC.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($iscc) {
-            Add-Content -Path $env:GITHUB_ENV -Value "ISCC_PATH=$($iscc.FullName)"
+            echo "ISCC_PATH=$($iscc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             echo "Found ISCC.exe at $($iscc.FullName)"
         } else {
             echo "ISCC.exe not found."
@@ -66,10 +55,10 @@ jobs:
       run: |
         @"
         [Setup]
-        AppName=Парсер Кришa
+        AppName=Парсер Krisha
         AppVersion=1.0
-        DefaultDirName={pf}\ПарсерКришa
-        DefaultGroupName=Парсер Кришa
+        DefaultDirName={pf}\ПарсерKrisha
+        DefaultGroupName=Парсер Krisha
         OutputBaseFilename=ParserKrishaInstaller
         Compression=lzma
         SolidCompression=yes
@@ -79,36 +68,15 @@ jobs:
         Source: "parser.ico"; DestDir: "{app}"; Flags: ignoreversion
 
         [Icons]
-        Name: "{group}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"
-        Name: "{commondesktop}\Парсер Кришa"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"; Tasks: desktopicon
+        Name: "{group}\Парсер Krisha"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"
+        Name: "{commondesktop}\Парсер Krisha"; Filename: "{app}\parser_gui.exe"; IconFilename: "{app}\parser.ico"; Tasks: desktopicon
 
         [Tasks]
         Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: checked
 
         [Run]
-        Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Кришa"; Flags: nowait, postinstall, skipifsilent
+        Filename: "{app}\parser_gui.exe"; Description: "Запустить Парсер Krisha"; Flags: nowait, postinstall, skipifsilent
         "@ | Out-File -FilePath install_script.iss -Encoding utf8NoBOM
-
-    - name: Show Inno Setup Script Content
-      run: |
-        Get-Content install_script.iss
-
-    - name: Show ISCC_PATH
-      run: |
-        echo "ISCC_PATH=$env:ISCC_PATH"
-
-    - name: Check ISCC.exe exists
-      run: |
-        if (!(Test-Path "$env:ISCC_PATH")) {
-            Write-Error "ISCC.exe not found at $env:ISCC_PATH"
-            exit 1
-        } else {
-            Write-Host "ISCC.exe exists at $env:ISCC_PATH"
-        }
-
-    - name: List Inno Setup Directory
-      run: |
-        Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\"
 
     - name: Compile Inno Setup Script
       run: |
